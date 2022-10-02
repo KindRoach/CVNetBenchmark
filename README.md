@@ -25,6 +25,21 @@ conda install -c huggingface -c conda-forge datasets
 conda install -c conda-forge scikit-learn
 ```
 
+### Huggingface Access Tokens
+
+Downloading [imagenet-1k](https://www.image-net.org/) from Huggingface
+requires you to agree to the [User Agreement](https://huggingface.co/datasets/imagenet-1k). So you have to register
+a [Huggingface Account](https://huggingface.co/join) and create a [Huggingface Access Token](https://huggingface.co/docs/hub/security-tokens).
+Once you gain token, put it in a python script ```config.py```:
+
+```python
+# See: https://huggingface.co/docs/hub/security-tokens
+# Put your huggingface Access Tokens here
+hf_token = "hf_**********************************"
+```
+
+so that ```main.py``` could import ```hf_token```.
+
 ## Run Benchmark
 
 The first run will take time to download the dataset and pretrained model.
