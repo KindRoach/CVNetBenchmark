@@ -1,17 +1,41 @@
 import time
-from types import ModuleType
+from dataclasses import dataclass
+from typing import Dict
 
 import pandas
 import torch
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
 from sklearn.metrics import top_k_accuracy_score
+from torch.utils.data import DataLoader
+from torchvision.models import *
+from torchvision.models._api import WeightsEnum
+from torchvision.transforms import transforms
 from tqdm import tqdm
 
-import alexnet
 from config import hf_token
 
+REPO_URL = "pytorch/vision:v0.13.1"
 
-def acc_benchmark(m_model: ModuleType, batch_size: int, device: str) -> float:
+
+@dataclass
+class ModelConfig:
+    weight: WeightsEnum
+    resize: int
+    crop: int
+
+
+# See more models in https://pytorch.org/vision/stable/models
+MODEL_CONFIG: Dict[str, ModelConfig] = {
+    alexnet.__name__: ModelConfig(AlexNet_Weights.DEFAULT, 256, 224),
+    vgg19_bn.__name__: ModelConfig(VGG19_BN_Weights.DEFAULT, 256, 224),
+    googlenet.__name__: ModelConfig(GoogLeNet_Weights.DEFAULT, 256, 224),
+    inception_v3.__name__: ModelConfig(Inception_V3_Weights.DEFAULT, 342, 299),
+    resnet50.__name__: ModelConfig(ResNet50_Weights.DEFAULT, 232, 224),
+    mobilenet_v3_large.__name__: ModelConfig(MobileNet_V3_Large_Weights.DEFAULT, 256, 224),
+}
+
+
+def acc_benchmark(model_name: str, batch_size: int, device: str) -> float:
     torch.hub.set_dir("model")
     dataset = load_dataset(
         "imagenet-1k",
@@ -22,8 +46,8 @@ def acc_benchmark(m_model: ModuleType, batch_size: int, device: str) -> float:
     )
     labels = dataset["label"]
 
-    dataloader = m_model.create_dataloader(dataset, batch_size)
-    model = m_model.load_pretrained_model()
+    dataloader = create_dataloader(model_name, dataset, batch_size)
+    model = torch.hub.load(REPO_URL, model_name, weights=MODEL_CONFIG[model_name].weight)
 
     torch_device = torch.device(device)
     model.eval()
@@ -38,11 +62,30 @@ def acc_benchmark(m_model: ModuleType, batch_size: int, device: str) -> float:
     return top_k_accuracy_score(labels, predicts, k=5)
 
 
-def performance_benchmark(m_model: ModuleType, batch_size: int, device: str) -> float:
-    torch_device = torch.device(device)
-    test_batch = m_model.create_test_batch(batch_size).to(torch_device)
+def create_dataloader(model_name: str, dataset: Dataset, batch_size: int) -> DataLoader:
+    config = MODEL_CONFIG[model_name]
+    preprocess = transforms.Compose([
+        transforms.Resize(config.resize),
+        transforms.CenterCrop(config.crop),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
 
-    model = m_model.load_pretrained_model()
+    def image_transforms(batch):
+        batch["image"] = [preprocess(image.convert("RGB")) for image in batch["image"]]
+        return batch
+
+    dataset.set_transform(image_transforms)
+    dataloader = DataLoader(dataset, batch_size=batch_size, pin_memory=True)
+    return dataloader
+
+
+def performance_benchmark(model_name: str, batch_size: int, device: str) -> float:
+    torch_device = torch.device(device)
+    config = MODEL_CONFIG[model_name]
+    test_batch = torch.rand([batch_size, 3, config.crop, config.crop], dtype=torch.float).to(torch_device)
+
+    model = torch.hub.load(REPO_URL, model_name, weights=MODEL_CONFIG[model_name].weight)
     model.eval()
     model.to(torch_device)
 
@@ -63,10 +106,10 @@ def performance_benchmark(m_model: ModuleType, batch_size: int, device: str) -> 
 
 def main():
     result = {"model": [], "top-5 acc": [], "sample/s": []}
-    for m_model in [alexnet]:
-        acc = acc_benchmark(m_model, 128, "cuda:0")
-        performance = performance_benchmark(m_model, 128, "cuda:0")
-        result["model"].append(alexnet.__name__)
+    for model_name in MODEL_CONFIG.keys():
+        acc = acc_benchmark(model_name, 64, "cuda:0")
+        performance = performance_benchmark(model_name, 64, "cuda:0")
+        result["model"].append(model_name)
         result["top-5 acc"].append(acc)
         result["sample/s"].append(performance)
     print(pandas.DataFrame(result))

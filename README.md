@@ -1,7 +1,7 @@
 # Classic Computer Vision Network Benchmark
 
 This is repo for classic computer vision network benchmark
-on the image classification task with dataset [imagenet-1k](https://www.image-net.org/).
+on the image classification task with the validation split of dataset [imagenet-1k](https://www.image-net.org/).
 There are two indicators: [top-5 accuracy](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.top_k_accuracy_score.html)
 and performance in ```sample/s```.
 
